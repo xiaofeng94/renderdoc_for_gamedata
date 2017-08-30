@@ -46,3 +46,7 @@ qrenderdoc/3rdparty/pyside
 .DS_Store
 plugins-*/
 capture_log/
+Win32/
+*Win32/
+*Profile/
+pdblocate/
