@@ -596,6 +596,7 @@ bool ReplayController::SaveTexture(const TextureSave &saveData, const char *path
      td.format.specialFormat == SpecialFormat::EAC || td.format.specialFormat == SpecialFormat::ASTC)
     downcast = true;
 
+  // modified by zsy | begin  D32S8 is not unknown
   // for DDS don't downcast, for non-HDR always downcast if we're not already RGBA8 unorm
   // for HDR&EXR we can convert from most regular types as well as 10.10.10.2 and 11.11.10
   if((sd.destType != FileType::DDS && sd.destType != FileType::HDR && sd.destType != FileType::EXR &&
@@ -603,7 +604,9 @@ bool ReplayController::SaveTexture(const TextureSave &saveData, const char *path
        td.format.compType != CompType::UNorm || td.format.bgraOrder)) ||
      downcast || (sd.destType != FileType::DDS && td.format.special &&
                   td.format.specialFormat != SpecialFormat::R10G10B10A2 &&
-                  td.format.specialFormat != SpecialFormat::R11G11B10))
+                  td.format.specialFormat != SpecialFormat::R11G11B10) && 
+					td.format.specialFormat != SpecialFormat::D32S8)
+  // modified by zsy | end
   {
     downcast = true;
     td.format.compByteWidth = 1;
@@ -850,10 +853,13 @@ bool ReplayController::SaveTexture(const TextureSave &saveData, const char *path
 
   int numComps = td.format.compCount;
 
+  // modified by zsy | begin  for depth
   // if we want a grayscale image of one channel, splat it across all channels
   // and set alpha to full
   if(sd.channelExtract >= 0 && td.format.compByteWidth == 1 &&
      (uint32_t)sd.channelExtract < td.format.compCount)
+
+  // modified by zsy | begin
   {
     uint32_t cc = td.format.compCount;
 
@@ -1043,190 +1049,249 @@ bool ReplayController::SaveTexture(const TextureSave &saveData, const char *path
     }
     else if(sd.destType == FileType::HDR || sd.destType == FileType::EXR)
     {
-      float *fldata = NULL;
-      float *abgr[4] = {NULL, NULL, NULL, NULL};
+		// added by zsy | begin  save to exr file for D32S8. 
+		// althought stencil is 8 bits, it still needs 32 bits to store
+		if (sd.destType == FileType::EXR && td.format.special && td.format.specialFormat == SpecialFormat::D32S8)
+		{
+			float *depthStencil[2] = { NULL, NULL};
+			depthStencil[0] = new float[td.width*td.height]; // for depth
+			depthStencil[1] = new float[td.width*td.height]; // for stencil
 
-      if(sd.destType == FileType::HDR)
-      {
-        fldata = new float[td.width * td.height * 4];
-      }
-      else
-      {
-        abgr[0] = new float[td.width * td.height];
-        abgr[1] = new float[td.width * td.height];
-        abgr[2] = new float[td.width * td.height];
-        abgr[3] = new float[td.width * td.height];
-      }
+			byte *srcData = subdata[0];
+			for (uint32_t y = 0; y < td.height; y++)
+			{
+				for (uint32_t x = 0; x < td.width; x++)
+				{
+					float depth = *(float*)(srcData);
+					float stencil = *(float*)(srcData + 4);
 
-      byte *srcData = subdata[0];
+					depthStencil[0][y*td.width + x] = depth;
+					depthStencil[1][y*td.width + x] = stencil;
 
-      ResourceFormat saveFmt = td.format;
-      if(saveFmt.compType == CompType::Typeless)
-        saveFmt.compType = sd.typeHint;
-      if(saveFmt.compType == CompType::Typeless)
-        saveFmt.compType = saveFmt.compByteWidth == 4 ? CompType::Float : CompType::UNorm;
+					srcData += 8;
+				}
+			}
 
-      uint32_t pixStride = saveFmt.compCount * saveFmt.compByteWidth;
+			const char *err = NULL;
 
-      // 24-bit depth still has a stride of 4 bytes.
-      if(saveFmt.compType == CompType::Depth && pixStride == 3)
-        pixStride = 4;
+			EXRImage exrImage;
+			InitEXRImage(&exrImage);
 
-      for(uint32_t y = 0; y < td.height; y++)
-      {
-        for(uint32_t x = 0; x < td.width; x++)
-        {
-          float r = 0.0f;
-          float g = 0.0f;
-          float b = 0.0f;
-          float a = 1.0f;
+			int pixTypes[2] = { TINYEXR_PIXELTYPE_FLOAT, TINYEXR_PIXELTYPE_FLOAT };
+			int reqTypes[2] = { TINYEXR_PIXELTYPE_HALF, TINYEXR_PIXELTYPE_HALF };
 
-          if(saveFmt.special && saveFmt.specialFormat == SpecialFormat::R10G10B10A2)
-          {
-            uint32_t *u32 = (uint32_t *)srcData;
+			const char *channelsNames[2] = { "D", "S"};
 
-            Vec4f vec = ConvertFromR10G10B10A2(*u32);
+			exrImage.num_channels = 2;
+			exrImage.channel_names = channelsNames;
+			exrImage.images = (unsigned char **)depthStencil;
+			exrImage.width = td.width;
+			exrImage.height = td.height;
+			exrImage.pixel_types = pixTypes;
+			exrImage.requested_pixel_types = reqTypes;
 
-            r = vec.x;
-            g = vec.y;
-            b = vec.z;
-            a = vec.w;
+			unsigned char *mem = NULL;
 
-            srcData += 4;
-          }
-          else if(saveFmt.special && saveFmt.specialFormat == SpecialFormat::R11G11B10)
-          {
-            uint32_t *u32 = (uint32_t *)srcData;
+			size_t ret = SaveMultiChannelEXRToMemory(&exrImage, &mem, &err);
 
-            Vec3f vec = ConvertFromR11G11B10(*u32);
+			success = (ret > 0);
+			if (success)
+				FileIO::fwrite(mem, 1, ret, f);
+			else
+				RDCERR("Error saving EXR file %d: '%s'", ret, err);
 
-            r = vec.x;
-            g = vec.y;
-            b = vec.z;
-            a = 1.0f;
+			free(mem);
+			delete[] depthStencil[0];
+			delete[] depthStencil[1];
+		}
+		else  // no changes below
+		{
+			float *fldata = NULL;
+			float *abgr[4] = { NULL, NULL, NULL, NULL };
 
-            srcData += 4;
-          }
-          else
-          {
-            if(saveFmt.compCount >= 1)
-              r = ConvertComponent(saveFmt, srcData + saveFmt.compByteWidth * 0);
-            if(saveFmt.compCount >= 2)
-              g = ConvertComponent(saveFmt, srcData + saveFmt.compByteWidth * 1);
-            if(saveFmt.compCount >= 3)
-              b = ConvertComponent(saveFmt, srcData + saveFmt.compByteWidth * 2);
-            if(saveFmt.compCount >= 4)
-              a = ConvertComponent(saveFmt, srcData + saveFmt.compByteWidth * 3);
+			if (sd.destType == FileType::HDR)
+			{
+				fldata = new float[td.width * td.height * 4];
+			}
+			else
+			{
+				abgr[0] = new float[td.width * td.height];
+				abgr[1] = new float[td.width * td.height];
+				abgr[2] = new float[td.width * td.height];
+				abgr[3] = new float[td.width * td.height];
+			}
 
-            srcData += pixStride;
-          }
+			byte *srcData = subdata[0];
 
-          if(saveFmt.bgraOrder)
-            std::swap(r, b);
+			ResourceFormat saveFmt = td.format;
+			if (saveFmt.compType == CompType::Typeless)
+				saveFmt.compType = sd.typeHint;
+			if (saveFmt.compType == CompType::Typeless)
+				saveFmt.compType = saveFmt.compByteWidth == 4 ? CompType::Float : CompType::UNorm;
 
-          // HDR can't represent negative values
-          if(sd.destType == FileType::HDR)
-          {
-            r = RDCMAX(r, 0.0f);
-            g = RDCMAX(g, 0.0f);
-            b = RDCMAX(b, 0.0f);
-            a = RDCMAX(a, 0.0f);
-          }
+			uint32_t pixStride = saveFmt.compCount * saveFmt.compByteWidth;
 
-          if(sd.channelExtract == 0)
-          {
-            g = b = r;
-            a = 1.0f;
-          }
-          if(sd.channelExtract == 1)
-          {
-            r = b = g;
-            a = 1.0f;
-          }
-          if(sd.channelExtract == 2)
-          {
-            r = g = b;
-            a = 1.0f;
-          }
-          if(sd.channelExtract == 3)
-          {
-            r = g = b = a;
-            a = 1.0f;
-          }
+			// 24-bit depth still has a stride of 4 bytes.
+			if (saveFmt.compType == CompType::Depth && pixStride == 3)
+				pixStride = 4;
 
-          if(fldata)
-          {
-            fldata[(y * td.width + x) * 4 + 0] = r;
-            fldata[(y * td.width + x) * 4 + 1] = g;
-            fldata[(y * td.width + x) * 4 + 2] = b;
-            fldata[(y * td.width + x) * 4 + 3] = a;
-          }
-          else
-          {
-            abgr[0][(y * td.width + x)] = a;
-            abgr[1][(y * td.width + x)] = b;
-            abgr[2][(y * td.width + x)] = g;
-            abgr[3][(y * td.width + x)] = r;
-          }
-        }
-      }
+			for (uint32_t y = 0; y < td.height; y++)
+			{
+				for (uint32_t x = 0; x < td.width; x++)
+				{
+					float r = 0.0f;
+					float g = 0.0f;
+					float b = 0.0f;
+					float a = 1.0f;
 
-      if(sd.destType == FileType::HDR)
-      {
-        int ret = stbi_write_hdr_to_func(fileWriteFunc, (void *)f, td.width, td.height, 4, fldata);
-        success = (ret != 0);
+					if (saveFmt.special && saveFmt.specialFormat == SpecialFormat::R10G10B10A2)
+					{
+						uint32_t *u32 = (uint32_t *)srcData;
 
-        if(!success)
-          RDCERR("stbi_write_hdr_to_func failed: %d", ret);
-      }
-      else if(sd.destType == FileType::EXR)
-      {
-        const char *err = NULL;
+						Vec4f vec = ConvertFromR10G10B10A2(*u32);
 
-        EXRImage exrImage;
-        InitEXRImage(&exrImage);
+						r = vec.x;
+						g = vec.y;
+						b = vec.z;
+						a = vec.w;
 
-        int pixTypes[4] = {TINYEXR_PIXELTYPE_FLOAT, TINYEXR_PIXELTYPE_FLOAT,
-                           TINYEXR_PIXELTYPE_FLOAT, TINYEXR_PIXELTYPE_FLOAT};
-        int reqTypes[4] = {TINYEXR_PIXELTYPE_HALF, TINYEXR_PIXELTYPE_HALF, TINYEXR_PIXELTYPE_HALF,
-                           TINYEXR_PIXELTYPE_HALF};
+						srcData += 4;
+					}
+					else if (saveFmt.special && saveFmt.specialFormat == SpecialFormat::R11G11B10)
+					{
+						uint32_t *u32 = (uint32_t *)srcData;
 
-        // must be in this order as many viewers don't pay attention to channels and just assume
-        // they are in this order
-        const char *bgraNames[4] = {"A", "B", "G", "R"};
+						Vec3f vec = ConvertFromR11G11B10(*u32);
 
-        exrImage.num_channels = 4;
-        exrImage.channel_names = bgraNames;
-        exrImage.images = (unsigned char **)abgr;
-        exrImage.width = td.width;
-        exrImage.height = td.height;
-        exrImage.pixel_types = pixTypes;
-        exrImage.requested_pixel_types = reqTypes;
+						r = vec.x;
+						g = vec.y;
+						b = vec.z;
+						a = 1.0f;
 
-        unsigned char *mem = NULL;
+						srcData += 4;
+					}
+					else
+					{
+						if (saveFmt.compCount >= 1)
+							r = ConvertComponent(saveFmt, srcData + saveFmt.compByteWidth * 0);
+						if (saveFmt.compCount >= 2)
+							g = ConvertComponent(saveFmt, srcData + saveFmt.compByteWidth * 1);
+						if (saveFmt.compCount >= 3)
+							b = ConvertComponent(saveFmt, srcData + saveFmt.compByteWidth * 2);
+						if (saveFmt.compCount >= 4)
+							a = ConvertComponent(saveFmt, srcData + saveFmt.compByteWidth * 3);
 
-        size_t ret = SaveMultiChannelEXRToMemory(&exrImage, &mem, &err);
+						srcData += pixStride;
+					}
 
-        success = (ret > 0);
-        if(success)
-          FileIO::fwrite(mem, 1, ret, f);
-        else
-          RDCERR("Error saving EXR file %d: '%s'", ret, err);
+					if (saveFmt.bgraOrder)
+						std::swap(r, b);
 
-        free(mem);
-      }
+					// HDR can't represent negative values
+					if (sd.destType == FileType::HDR)
+					{
+						r = RDCMAX(r, 0.0f);
+						g = RDCMAX(g, 0.0f);
+						b = RDCMAX(b, 0.0f);
+						a = RDCMAX(a, 0.0f);
+					}
 
-      if(fldata)
-      {
-        delete[] fldata;
-      }
-      else
-      {
-        delete[] abgr[0];
-        delete[] abgr[1];
-        delete[] abgr[2];
-        delete[] abgr[3];
-      }
+					if (sd.channelExtract == 0)
+					{
+						g = b = r;
+						a = 1.0f;
+					}
+					if (sd.channelExtract == 1)
+					{
+						r = b = g;
+						a = 1.0f;
+					}
+					if (sd.channelExtract == 2)
+					{
+						r = g = b;
+						a = 1.0f;
+					}
+					if (sd.channelExtract == 3)
+					{
+						r = g = b = a;
+						a = 1.0f;
+					}
+
+					if (fldata)
+					{
+						fldata[(y * td.width + x) * 4 + 0] = r;
+						fldata[(y * td.width + x) * 4 + 1] = g;
+						fldata[(y * td.width + x) * 4 + 2] = b;
+						fldata[(y * td.width + x) * 4 + 3] = a;
+					}
+					else
+					{
+						abgr[0][(y * td.width + x)] = a;
+						abgr[1][(y * td.width + x)] = b;
+						abgr[2][(y * td.width + x)] = g;
+						abgr[3][(y * td.width + x)] = r;
+					}
+				}
+			}
+
+			if (sd.destType == FileType::HDR)
+			{
+				int ret = stbi_write_hdr_to_func(fileWriteFunc, (void *)f, td.width, td.height, 4, fldata);
+				success = (ret != 0);
+
+				if (!success)
+					RDCERR("stbi_write_hdr_to_func failed: %d", ret);
+			}
+			else if (sd.destType == FileType::EXR)
+			{
+				const char *err = NULL;
+
+				EXRImage exrImage;
+				InitEXRImage(&exrImage);
+
+				int pixTypes[4] = { TINYEXR_PIXELTYPE_FLOAT, TINYEXR_PIXELTYPE_FLOAT,
+					TINYEXR_PIXELTYPE_FLOAT, TINYEXR_PIXELTYPE_FLOAT };
+				int reqTypes[4] = { TINYEXR_PIXELTYPE_HALF, TINYEXR_PIXELTYPE_HALF, TINYEXR_PIXELTYPE_HALF,
+					TINYEXR_PIXELTYPE_HALF };
+
+				// must be in this order as many viewers don't pay attention to channels and just assume
+				// they are in this order
+				const char *bgraNames[4] = { "A", "B", "G", "R" };
+
+				exrImage.num_channels = 4;
+				exrImage.channel_names = bgraNames;
+				exrImage.images = (unsigned char **)abgr;
+				exrImage.width = td.width;
+				exrImage.height = td.height;
+				exrImage.pixel_types = pixTypes;
+				exrImage.requested_pixel_types = reqTypes;
+
+				unsigned char *mem = NULL;
+
+				size_t ret = SaveMultiChannelEXRToMemory(&exrImage, &mem, &err);
+
+				success = (ret > 0);
+				if (success)
+					FileIO::fwrite(mem, 1, ret, f);
+				else
+					RDCERR("Error saving EXR file %d: '%s'", ret, err);
+
+				free(mem);
+			}
+
+			if (fldata)
+			{
+				delete[] fldata;
+			}
+			else
+			{
+				delete[] abgr[0];
+				delete[] abgr[1];
+				delete[] abgr[2];
+				delete[] abgr[3];
+			}
+		}
+		// added by zsy | end
     }
 
     FileIO::fclose(f);

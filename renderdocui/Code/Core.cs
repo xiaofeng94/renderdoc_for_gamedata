@@ -968,11 +968,11 @@ namespace renderdocui.Code
                 else if (filename.EndsWith("exr"))
                 {
                     // exr for depth
-                    save.mip = 0;
-                    save.channelExtract = 0;
-                    save.slice.sliceGridWidth = 1;
-                    save.typeHint = FormatComponentType.Depth;
-                    save.alphaCol = new FloatVector(0, 0, 0, 0); 
+                    //save.mip = 0;
+                    //save.channelExtract = 0;
+                    //save.slice.sliceGridWidth = 1;
+                    //save.typeHint = FormatComponentType.Depth;
+                    //save.alphaCol = new FloatVector(0, 0, 0, 0); 
 
                     save.destType = FileType.EXR;
                 }
