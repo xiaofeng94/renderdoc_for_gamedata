@@ -943,5 +943,72 @@ namespace renderdocui.Code
         }
 
         #endregion
+
+        // added by zsy | begin
+
+        #region Additional Helpers for Python
+
+        public bool SaveTexture(ResourceId id, string filename)
+        {
+            if (id != ResourceId.Null)
+            {
+                TextureSave save = new TextureSave();
+                save.comp.blackPoint = 0.0f;
+                save.comp.whitePoint = 1.0f;
+                save.typeHint = FormatComponentType.UNorm;
+
+                if (filename.EndsWith("png"))
+                {
+                    save.destType = FileType.PNG;
+                }
+                else if (filename.EndsWith("dds"))
+                {
+                    save.destType = FileType.DDS;
+                }
+                else if (filename.EndsWith("exr"))
+                {
+                    // exr for depth
+                    save.mip = 0;
+                    save.channelExtract = 0;
+                    save.slice.sliceGridWidth = 1;
+                    save.typeHint = FormatComponentType.Depth;
+                    save.alphaCol = new FloatVector(0, 0, 0, 0); 
+
+                    save.destType = FileType.EXR;
+                }
+                else if (filename.EndsWith("hdr"))
+                {
+                    save.destType = FileType.HDR;
+                }
+                else if (filename.EndsWith("jpg"))
+                {
+                    save.destType = FileType.JPG;
+                }
+                else if (filename.EndsWith("bmp"))
+                {
+                    save.destType = FileType.BMP;
+                }
+                else if (filename.EndsWith("tga"))
+                {
+                    save.destType = FileType.TGA;
+                }
+                else return false;
+
+                save.id = id;
+
+                bool ret = false;
+                Renderer.Invoke((ReplayRenderer r) =>
+                {
+                    ret = r.SaveTexture(save, filename);
+                });
+
+                return ret;
+            }
+            else return false;
+        }
+
+        #endregion
+
+        // added by zsy | end
     }
 }
