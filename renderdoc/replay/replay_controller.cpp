@@ -1078,7 +1078,7 @@ bool ReplayController::SaveTexture(const TextureSave &saveData, const char *path
 			InitEXRImage(&exrImage);
 
 			int pixTypes[2] = { TINYEXR_PIXELTYPE_FLOAT, TINYEXR_PIXELTYPE_FLOAT };
-			int reqTypes[2] = { TINYEXR_PIXELTYPE_HALF, TINYEXR_PIXELTYPE_HALF };
+			int reqTypes[2] = { TINYEXR_PIXELTYPE_FLOAT, TINYEXR_PIXELTYPE_FLOAT };
 
 			const char *channelsNames[2] = { "D", "S"};
 
