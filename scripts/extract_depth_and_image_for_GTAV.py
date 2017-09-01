@@ -46,20 +46,19 @@ def getColorBuffers(eventId):
 def getDepthBuffer():
 	# find an event that use depth to initialise depth
 	numColorTargets = 4
-	potentialEIDs = [i for i,call in enumerate(drawcalls) if call.name.find('%d Targets + Depth)' % numColorTargets) >= 0]
-	assert(len(potentialEIDs) >= 1, 'Found not enough potential events for depth.')
-	print 'pass containing depth {0}: {1}'.format(potentialEIDs[-1], drawcalls[potentialEIDs[0]].eventID)
-	pyrenderdoc.SetEventID(None, drawcalls[potentialEIDs[0]].eventID)
+	potentialPos = [i for i,call in enumerate(drawcalls) if call.name.find('%d Targets + Depth)' % numColorTargets) >= 0]
+	assert(len(potentialPos) >= 1, 'Found not enough potential events for depth.')
+	print 'parent pass containing depth {0}: {1}'.format(potentialPos[-1], drawcalls[potentialPos[0]].eventID)
+	pChildrenDraws = drawcalls[potentialPos[0]].children
+	pChildDraw = pChildrenDraws[-1] # last child contains all depth
+	print 'child pass containing depth {0}'.format(pChildDraw.eventID)
+
+	pyrenderdoc.SetEventID(None, pChildDraw.eventID)
 
 	# get depth target
 	depthTarget = pyrenderdoc.CurPipelineState.GetDepthTarget()
 	return depthTarget
 
-
-# Save depth target
-depthTarget = getDepthBuffer()
-print 'depth {0}'.format(depthTarget.Id)
-pyrenderdoc.SaveTexture(depthTarget.Id, '{0}/{1}_depth.exr'.format(saveDir, filePrefix))
 
 # Save color frame
 finalPassId = getfinalPassForGTAV()
@@ -69,6 +68,12 @@ print 'color {0}'.format(finalPassId)
 colorbuffers = getColorBuffers(finalPassId)
 assert(len(colorbuffers) == 1, 'Found %d potential final render targets.' % len(colorbuffers))
 pyrenderdoc.SaveTexture(colorbuffers[0].Id, '{0}/{1}_final.jpg'.format(saveDir, filePrefix))
+
+# Save depth target
+# depthTarget = pyrenderdoc.CurPipelineState.GetDepthTarget()
+depthTarget = getDepthBuffer()
+print 'depth {0}'.format(depthTarget.Id)
+pyrenderdoc.SaveTexture(depthTarget.Id, '{0}/{1}_depth.exr'.format(saveDir,filePrefix))
 
 print 'done.'
 
