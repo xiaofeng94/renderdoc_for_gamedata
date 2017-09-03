@@ -353,6 +353,10 @@ private:
 
   vector<RENDERDOC_InputButton> m_FocusKeys;
   vector<RENDERDOC_InputButton> m_CaptureKeys;
+  // added by zsy | begin
+  vector<RENDERDOC_InputButton> m_CapsSwitchKeys;
+  vector<RENDERDOC_InputButton> m_CapsOffKeys;
+  // added by zsy | end
 
   GlobalEnvironment m_GlobalEnv;
 

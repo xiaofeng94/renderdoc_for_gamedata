@@ -236,6 +236,14 @@ RenderDoc::RenderDoc()
   m_CaptureKeys.push_back(eRENDERDOC_Key_F12);
   m_CaptureKeys.push_back(eRENDERDOC_Key_PrtScrn);
 
+  // added by zsy | begin
+  m_CapsSwitchKeys.clear();
+  m_CapsSwitchKeys.push_back(eRENDERDOC_Key_F10);
+
+  m_CapsOffKeys.clear();
+  m_CapsOffKeys.push_back(eRENDERDOC_Key_F11);
+  // added by zsy | end
+
   m_ProgressPtr = NULL;
 
   m_ExHandler = NULL;
@@ -545,13 +553,38 @@ void RenderDoc::Tick()
   static bool prev_focus = false;
   static bool prev_cap = false;
 
+  // modified by zsy | begin
+  static bool caps_state = false;
+  static uint32_t caps_interval_count = 0;
+
   bool cur_focus = false;
   for(size_t i = 0; i < m_FocusKeys.size(); i++)
     cur_focus |= Keyboard::GetKeyState(m_FocusKeys[i]);
 
   bool cur_cap = false;
   for(size_t i = 0; i < m_CaptureKeys.size(); i++)
-    cur_cap |= Keyboard::GetKeyState(m_CaptureKeys[i]);
+	  cur_cap |= Keyboard::GetKeyState(m_CaptureKeys[i]);
+
+  bool cur_caps_state = false;
+  for (size_t i = 0;i < m_CapsSwitchKeys.size(); ++i)
+  {
+	  cur_caps_state |= Keyboard::GetKeyState(m_CapsSwitchKeys[i]);
+  }
+  if (cur_caps_state)
+  {
+	  caps_state = true;
+	  caps_interval_count = 0;
+  }
+  bool caps_off_state = false;
+  for (size_t i = 0;i < m_CapsOffKeys.size(); ++i)
+  {
+	  caps_off_state |= Keyboard::GetKeyState(m_CapsOffKeys[i]);
+  }
+  if (caps_off_state)
+  {
+	  caps_state = false;
+  }
+  
 
   m_FrameTimer.UpdateTimers();
 
@@ -579,13 +612,28 @@ void RenderDoc::Tick()
       }
     }
   }
-  if(!prev_cap && cur_cap)
+
+  if (caps_state)
   {
-    TriggerCapture(1);
+	  if (caps_interval_count % 40 == 0)
+	  {
+		  TriggerCapture(1);
+		  caps_interval_count = 0;
+	  }
+	  ++caps_interval_count;
+  }
+  else 
+  {
+	  if (!prev_cap && cur_cap)
+	  {
+		  TriggerCapture(1);
+	  }
   }
 
   prev_focus = cur_focus;
   prev_cap = cur_cap;
+
+  // modified by zsy | end
 }
 
 string RenderDoc::GetOverlayText(RDCDriver driver, uint32_t frameNumber, int flags)
