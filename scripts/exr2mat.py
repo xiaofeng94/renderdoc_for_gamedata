@@ -3,7 +3,7 @@
 
 import OpenEXR, Imath, numpy
 exr_root = 'E:/renderdoc/capture_log/processed'
-filePrefix = 'GTA5_2017.08.29_22.48.31_frame7734_'
+filePrefix = 'GTA5_2017.09.03_17.28.56_frame8020_'
 
 pt = Imath.PixelType(Imath.PixelType.FLOAT)
 exrFile = OpenEXR.InputFile('{0}/{1}_depth.exr'.format(exr_root,filePrefix))

@@ -1007,6 +1007,22 @@ namespace renderdocui.Code
             else return false;
         }
 
+        // index 0 for near plane, 1 for far plane
+        // call it after eventid has been setted
+        public float[] GetClipPlane()
+        {
+            MeshFormat meshFormat = new MeshFormat();
+            float[] planeDist = new float[2];
+
+            Renderer.Invoke((ReplayRenderer r) =>
+            {
+                meshFormat = r.GetPostVSData(0U, MeshDataStage.VSOut);
+                planeDist[0] = meshFormat.nearPlane;
+                planeDist[1] = meshFormat.farPlane;
+            });
+            return planeDist;
+        }
+
         #endregion
 
         // added by zsy | end

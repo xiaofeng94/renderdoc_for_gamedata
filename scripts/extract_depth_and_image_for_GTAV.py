@@ -77,6 +77,11 @@ pyrenderdoc.SaveTexture(depthTarget.Id, '{0}/{1}_depth.exr'.format(saveDir,fileP
 
 print 'done.'
 
+# get plane distance
+planeDist = pyrenderdoc.GetClipPlane()
+print '({0},{1})'.format(planeDist[0], planeDist[1])
+print '(%.15f, %e)'%(planeDist[0], planeDist[1])
+
 # close pyrenderdoc
 #pyrenderdoc.AppWindow.Close()
 
